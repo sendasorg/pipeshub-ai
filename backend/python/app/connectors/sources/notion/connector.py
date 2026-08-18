@@ -925,9 +925,26 @@ class NotionConnector(BaseConnector):
                 data = response.data.json() if response.data else {}
                 objects = data.get("results", [])
                 self.logger.info(
-                    "SENDAS-DEBUG batch: type=%s got=%d has_more=%r cursor=%s keys=%s",
+                    "SENDAS-DEBUG batch: type=%s got=%d has_more=%r cursor=%s keys=%s code=%r status=%r msg=%.80r",
                     object_type, len(objects), data.get("has_more"), bool(data.get("next_cursor")), sorted(data.keys()),
+                    data.get("code"), data.get("status"), data.get("message"),
                 )
+
+                # SENDAS FIX (upstream #2994): a non-2xx Notion response comes back
+                # as an error OBJECT with success=True from the wrapper; the empty
+                # results list must not be mistaken for end-of-corpus. Retry 429s
+                # without advancing the cursor; raise anything else.
+                if data.get("object") == "error":
+                    if data.get("status") == 429 or data.get("code") == "rate_limited":
+                        retry_attempts = getattr(self, "_sendas_search_retries", 0) + 1
+                        self._sendas_search_retries = retry_attempts
+                        if retry_attempts > 8:
+                            raise Exception(f"Notion search rate-limited {retry_attempts} times; aborting sync loudly rather than truncating")
+                        self.logger.warning("SENDAS FIX: search rate-limited, retrying batch (attempt %d)", retry_attempts)
+                        await asyncio.sleep(min(2 ** retry_attempts, 30))
+                        continue
+                    raise Exception(f"Notion search returned error mid-pagination: {data.get(chr(99)+chr(111)+chr(100)+chr(101))} {data.get(chr(109)+chr(101)+chr(115)+chr(115)+chr(97)+chr(103)+chr(101))}")
+                self._sendas_search_retries = 0
 
                 if not objects:
                     self.logger.info(f"No {object_type}s found after time {last_sync_time}")
