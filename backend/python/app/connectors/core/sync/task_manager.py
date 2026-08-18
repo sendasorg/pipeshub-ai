@@ -51,6 +51,15 @@ class SyncTaskManager:
         Returns:
             The newly created asyncio.Task.
         """
+        # SENDAS (debug build): first sync wins. The connector factory fires
+        # repeated start_sync calls minutes apart, each cancelling a long
+        # backfill walk mid-flight; combined with the newest-first sync-point
+        # high-water mark, an interrupted backfill can never complete.
+        existing = self._tasks.get(key)
+        if existing and not existing.done():
+            coro.close()
+            self.logger.info(f"SENDAS: {self._label} already running for {key} - keeping existing task, ignoring restart")
+            return existing
         await self.cancel_sync(key)
         return self._spawn(key, coro)
 
