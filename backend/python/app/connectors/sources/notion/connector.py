@@ -288,7 +288,7 @@ class NotionConnector(BaseConnector):
             )
 
             # Step 1: Sync users
-            await self._sync_users()
+            self.logger.info("users sync SKIPPED - local patch, upstream issue 2991")
 
             # Step 2: Sync all data sources (Search API returns all, regardless of hierarchy)
             await self._sync_objects_by_type("data_source")
@@ -924,6 +924,10 @@ class NotionConnector(BaseConnector):
 
                 data = response.data.json() if response.data else {}
                 objects = data.get("results", [])
+                self.logger.info(
+                    "SENDAS-DEBUG batch: type=%s got=%d has_more=%r cursor=%s keys=%s",
+                    object_type, len(objects), data.get("has_more"), bool(data.get("next_cursor")), sorted(data.keys()),
+                )
 
                 if not objects:
                     self.logger.info(f"No {object_type}s found after time {last_sync_time}")
@@ -1045,6 +1049,7 @@ class NotionConnector(BaseConnector):
                     break
 
                 if not data.get("has_more") or not data.get("next_cursor"):
+                    self.logger.info("SENDAS-DEBUG pagination ENDED: has_more=%r cursor_present=%s", data.get("has_more"), bool(data.get("next_cursor")))
                     break
                 cursor = data.get("next_cursor")
 
