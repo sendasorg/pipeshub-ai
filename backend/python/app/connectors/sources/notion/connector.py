@@ -892,7 +892,7 @@ class NotionConnector(BaseConnector):
                 self.logger.info(f"🆕 Full sync: Fetching all {object_type}s (first time)")
 
             cursor = None
-            page_size = 20  # Max allowed by Notion API : 100
+            page_size = 100  # SENDAS: was 20; fewer search calls = fewer 429 collisions (upstream #2994)
             total_synced = 0
             total_files = 0
             latest_edit_time = None
@@ -938,10 +938,10 @@ class NotionConnector(BaseConnector):
                     if data.get("status") == 429 or data.get("code") == "rate_limited":
                         retry_attempts = getattr(self, "_sendas_search_retries", 0) + 1
                         self._sendas_search_retries = retry_attempts
-                        if retry_attempts > 8:
+                        if retry_attempts > 30:
                             raise Exception(f"Notion search rate-limited {retry_attempts} times; aborting sync loudly rather than truncating")
                         self.logger.warning("SENDAS FIX: search rate-limited, retrying batch (attempt %d)", retry_attempts)
-                        await asyncio.sleep(min(2 ** retry_attempts, 30))
+                        await asyncio.sleep(min(2 ** min(retry_attempts, 6), 60))
                         continue
                     raise Exception(f"Notion search returned error mid-pagination: {data.get(chr(99)+chr(111)+chr(100)+chr(101))} {data.get(chr(109)+chr(101)+chr(115)+chr(115)+chr(97)+chr(103)+chr(101))}")
                 self._sendas_search_retries = 0
